@@ -29,6 +29,20 @@ from airflow.utils.state import State
 from airflow.utils import yaml
 from croniter import croniter
 
+import docker
+DOCKER_SOCKET = "unix:///var/run/docker.sock"
+
+def get_entrypoint(image):
+    client = docker.APIClient(base_url=DOCKER_SOCKET)
+    if len(client.images(image)) == 0:
+        client.pull(image)
+    config = client.inspect_image(image)["Config"]
+    entrypoint = config["Entrypoint"]
+    cmd = config["Cmd"]
+    if not entrypoint: return cmd
+    if not cmd: return entrypoint
+    return entrypoint.append(cmd)
+
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
@@ -160,6 +174,25 @@ class SuperKubernetesPodOperator(KubernetesPodOperator):
         log.info(yaml.dump(prune_dict(pod.to_dict(), mode='strict')))
 
     def execute(self, context):
+        entrypoint = get_entrypoint(self.image)
+        prefix_entrypoint = [
+            'echo "-- exporting env"',
+            
+            "set -o allexport",
+            '. "$JOB_DIR/in/.env"',
+            "set +o allexport",
+            # "printenv",
+            
+            'echo "-- exporting env with secret"',
+            "set -o allexport",
+            '. "$JOB_DIR/in/.secret"',
+            "set +o allexport",
+
+            'cat "$JOB_DIR/in/.env"',
+            'cat "$JOB_DIR/in/.secret"',
+        ]
+        self.cmds = ["/bin/sh", "-c", " && ".join(prefix_entrypoint) + " && " + " ".join(entrypoint)]
+        self.arguments = []
         log_start_event(context, EVENT_NAMES.get("TASK_START_EVENT"))
         # to be done async
         self.env_vars += self.fetch_env_from_optimus(context)

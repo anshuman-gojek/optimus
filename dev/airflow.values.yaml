@@ -2,12 +2,34 @@ scheduler:
   extraVolumeMounts: # this will get the volume and mount it to that path in the container
     - name: dags-path
       mountPath: /opt/airflow/dags  # location in the container it will put the directory mentioned below.
+    - mountPath: /var/run/docker.sock
+      name: docker-sock
+      readOnly: false
+    - mountPath: "/var/lib/docker"
+      name: docker-directory
+      readOnly: false
 
   extraVolumes: # this will create the volume from the directory
     - name: dags-path
       hostPath:
           path: /tmp/colima/dags
           type: Directory
+    - name: docker-sock
+      hostPath:
+        # path: "/run/cri-dockerd.sock"
+        # path: "/var/run/docker/containerd/containerd.sock"
+        path: "/var/run/docker.sock"
+        type: Socket
+    - name: docker-directory
+      hostPath:
+        path: "/var/lib/docker"
+        type: Directory
+
+images:
+  airflow:
+    repository: myairflow
+    tag: latest
+    pullPolicy: IfNotPresent
 
 config:
   core:
@@ -40,11 +62,18 @@ executor: "LocalExecutor"
 airflowVersion: "2.1.3"
 defaultAirflowTag: "2.1.3"
 
+securityContext:
+  runAsUser: 0
+
 workers:
   persistence:
     # Enable persistent volumes
     # enabled: true
     size: 1Gi
+
+# scheduler:
+#   securityContext:
+#     privileged: true
 
 flower:
   enabled: false
